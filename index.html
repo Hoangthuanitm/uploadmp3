@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Lưu và Xóa MP3 với IndexedDB</title>
+  <style>
+    body { font-family: Arial; padding: 20px; }
+    audio { display: block; margin-top: 5px; }
+    .file-entry { margin-bottom: 20px; }
+    button { margin-top: 5px; }
+  </style>
+</head>
+<body>
+  <h2>Upload MP3, Tạo Link và Xoá File</h2>
+  <input type="file" id="mp3Input" accept="audio/mpeg"><br><br>
+  <div id="linkContainer"></div>
+
+  <script>
+    const dbName = "MP3Store";
+    const storeName = "mp3files";
+    let db;
+
+    const openDB = indexedDB.open(dbName, 1);
+    openDB.onupgradeneeded = function (event) {
+      db = event.target.result;
+      if (!db.objectStoreNames.contains(storeName)) {
+        db.createObjectStore(storeName, { keyPath: "name" });
+      }
+    };
+
+    openDB.onsuccess = function (event) {
+      db = event.target.result;
+      loadSavedFiles();
+    };
+
+    openDB.onerror = function () {
+      alert("Không thể mở IndexedDB");
+    };
+
+    document.getElementById('mp3Input').addEventListener('change', function (event) {
+      const file = event.target.files[0];
+      if (file && file.type === "audio/mpeg") {
+        const reader = new FileReader();
+        reader.onload = function () {
+          const data = reader.result;
+          const tx = db.transaction(storeName, "readwrite");
+          const store = tx.objectStore(storeName);
+          store.put({ name: file.name, data });
+          tx.oncomplete = loadSavedFiles;
+        };
+        reader.readAsArrayBuffer(file);
+      } else {
+        alert("Vui lòng chọn một file MP3 hợp lệ.");
+      }
+    });
+
+    function loadSavedFiles() {
+      const tx = db.transaction(storeName, "readonly");
+      const store = tx.objectStore(storeName);
+      const request = store.getAll();
+
+      request.onsuccess = function () {
+        const container = document.getElementById("linkContainer");
+        container.innerHTML = "<h3>Danh sách MP3 đã lưu:</h3>";
+        request.result.forEach(file => {
+          const blob = new Blob([file.data], { type: "audio/mpeg" });
+          const url = URL.createObjectURL(blob);
+
+          const entry = document.createElement("div");
+          entry.className = "file-entry";
+          entry.innerHTML = `
+            <strong>${file.name}</strong><br>
+            <a href="${url}" download="${file.name}">Tải xuống</a><br>
+            <audio controls src="${url}"></audio><br>
+            <button onclick="deleteFile('${file.name}')">🗑️ Xoá file</button>
+          `;
+          container.appendChild(entry);
+        });
+      };
+    }
+
+    function deleteFile(fileName) {
+      const tx = db.transaction(storeName, "readwrite");
+      const store = tx.objectStore(storeName);
+      const deleteRequest = store.delete(fileName);
+
+      deleteRequest.onsuccess = function () {
+        loadSavedFiles(); // Reload danh sách sau khi xoá
+      };
+
+      deleteRequest.onerror = function () {
+        alert("Lỗi khi xoá file: " + fileName);
+      };
+    }
+  </script>
+</body>
+</html>
